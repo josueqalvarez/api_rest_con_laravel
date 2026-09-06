@@ -308,4 +308,101 @@ Tambien podemos retornar un response con algun mensaje de la siguiente manera:
 return response('', 204);
 ```
 
+# 2DA VERSION
 
+Para crear una 2da version solamente creamos un nuevo controlador, y resource, ambos en una nueva carpeta para cada uno con nombre V2, y usamos el mismo modelo (Post en nuestro ejemplo). La idea de tener una 2da version es la de brindar otro tipo de resultado de la api.
+
+# API PRIVADA
+
+Podemos solicitar un inicio de sesión para poder solicitar el uso de la api. El inicio de sesion hace que la api le daría un token, y por ello podrían acceder. 
+
+## laravel/sanctum
+
+Este es un requerimiento que necesitamos poder instalarlo. Comprueba quien es el usuario que hace la petición a la API, y siesque tiene permiso para acceder. Al instalar jetstream, lo trae incluido.
+
+### ¿Cómo funciona?
+Sactum genera un token a cada usuario que se registre, y al momento de hacer una petición verifica su Token para saber quien es, y confirma sus permisos antes de darle una respuesta positiva o negativa.
+
+### ¿Cómo usarlo?
+Tenemos que aplicar un middleware (filtro que se ejecuta antes de que una petición llegue al controlador) para autenticar con sanctum en las rutas.
+
+```
+->middleware('auth:sanctum')
+```
+
+### Salida
+
+Si no estamos autenticados, recibiremos un mensaje por defecto
+
+```
+"message": "Route [login] not defined.",
+```
+
+## Autenticacion
+
+### Controlador 
+Debemos crear un controlador especifico para autenticar (no es necesario que vaya a una version especificamente.) Este tendrá un metodo para validar los datos, y otro para la salida hacia la ruta.
+
+#### Metodo principal
+
+Este metodo retorna 2 salidas, si el usuario es validado o no, para ello llamaremos al metodo para verificar datos, y proseguimos con su salida.
+
+Usaremos un codigo similar al siguiente:
+
+```
+$this->validateLogin($request);
+    
+        if (Auth::attempt($request->only('email', 'password'))) {
+            return response()->json([
+                'token' => $request->user()->createToken($request->user()->name)->plainTextToken,
+                'message' => 'Success',
+                'user' => Auth::user()
+            ], 200);
+        } 
+
+        return response()->json([
+            'message' => 'Login failed'
+        ], 401);
+```
+
+- Auth. es una herramiente de Laravel, y se utiliza para manejar diversas opciones de autenticacion
+- attempt. es un metodo de Auth, que ayuda a intentar autenticar datos.
+
+En el 1er return verificamos que si hay un email y password, ante ello creamos un token segun el nombre de usaurio que se recibe en la solicitud, y mediante a ello genera un token. Luego 'user' para a recibir el valor del usuario actual, que seria el que acabamos de crear.
+
+En el 2do return, solo respondemos un mensaje de rechazo
+
+#### Metodo para verificar datos (validateLogin)
+
+Usamos un metodo para verificar los datos, que, por ejemplo, puede tener la siguiente sintaxis como return
+
+```
+return $request->validate([
+    'email' => 'required|email',
+    'password' => 'required|string',
+    'name' => 'required',
+    ]);     
+```
+La salida a este metodo será utilizado en el metodo de salida principal.
+
+> La finalidad de este metodo es verificar los campos, pero, la separación con el metodo principal, se debe a mejorar el orden.
+
+### Creación de ruta
+Debemos crearle una ruta para que pueda acceder al controlador, llamando a su metodo principal de salida.
+
+### Modelo Users
+Debemos editar el `model/Users` con los siguientes traits (forma de reutilizar métodos y propiedades entre varias clases)
+
+```
+use HasFactory, Notifiable, HasApiTokens;
+```
+
+- HasFactory (Permite que tu modelo utilice Factories. las cuales sirven principalmente para crear datos falsos/de prueba.) 
+- Notifiable (Agrega al modelo funcionalidades relacionadas con notificaciones de Laravel.)
+- **HasApiTokens** (**Se usa con LARAVEL SANCTUM**, proporciona al modelo funcionalidades para trabajar con tokens de API)
+
+### ¿Como verificamos? (Postman)
+
+1. En POSTMAN debemos enviar un post a `login`, con los campos necesarios agregados en el body (name, email y password). Esto nos devolvera un token, que se guardara en la tabla "personal_access_tokens"
+2. Debemos colocar el token en el HEAD al momento de ejecutar una peticion GET. Esto lo hacemos colocando "Authorization" en el "Key" y "Bearer -TOKEN- " como value. "Bearer " no es parte del token, solo es un identificador del token para que Sanctum lo detecte, y sepa como identificarlo
+3. Realizamos la consulta, y deberiamos recibir todo conforme
